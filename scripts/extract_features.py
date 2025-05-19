@@ -1,33 +1,47 @@
-import librosa
-import numpy as np
+import wave
+import struct
 
 def extract_segment_features(file_path, segment_duration=5.0):
-    y, sr = librosa.load(file_path, sr=44100, mono=True)
-    segment_samples = int(segment_duration * sr)
-    segments = [y[i:i + segment_samples] for i in range(0, len(y), segment_samples)]
-    
-    features_list = []
-    for segment in segments:
-        if len(segment) < segment_samples // 2:  # Bỏ qua segment quá ngắn
-            continue
-        # MFCC
-        mfcc = librosa.feature.mfcc(y=segment, sr=sr, n_mfcc=13)
-        mfcc_mean = np.mean(mfcc, axis=1)
-        mfcc_std = np.std(mfcc, axis=1)
+    # Mở file WAV
+    with wave.open(file_path, 'rb') as wav_file:
+        # Lấy thông số file
+        n_channels = wav_file.getnchannels()
+        sample_width = wav_file.getsampwidth()
+        frame_rate = wav_file.getframerate()
+        n_frames = wav_file.getnframes()
         
-        # Chroma
-        chroma = librosa.feature.chroma_stft(y=segment, sr=sr)
-        chroma_mean = np.mean(chroma, axis=1)
+        # Tính số mẫu trong một đoạn
+        segment_samples = int(frame_rate * segment_duration)
+        n_segments = n_frames // segment_samples
         
-        # Tempo
-        tempo, _ = librosa.beat.beat_track(y=segment, sr=sr)
+        # Đọc toàn bộ dữ liệu thô
+        raw_data = wav_file.readframes(n_frames)
+        # Chuyển đổi dữ liệu thô thành danh sách giá trị (cho định dạng 16-bit)
+        if sample_width == 2:  # 16-bit audio
+            samples = [struct.unpack('<h', raw_data[i:i+2])[0] for i in range(0, len(raw_data), 2)]
+        else:
+            raise ValueError("Chỉ hỗ trợ định dạng 16-bit hiện tại")
         
-        # Spectral Centroid
-        spectral_centroid = librosa.feature.spectral_centroid(y=segment, sr=sr)
-        spectral_centroid_mean = np.mean(spectral_centroid)
+        # Tính vector đặc trưng thủ công cho từng đoạn
+        features_list = []
+        for i in range(n_segments):
+            start_idx = i * segment_samples
+            end_idx = min((i + 1) * segment_samples, n_frames)
+            segment = samples[start_idx:end_idx]
+            if len(segment) < segment_samples // 2:  # Bỏ qua đoạn quá ngắn
+                continue
+                
+            # Tính trung bình biên độ
+            avg_amplitude = sum(abs(s) for s in segment) / len(segment) if segment else 0
+            
+            # Tính biến thiên biên độ (phương sai đơn giản)
+            if len(segment) > 1:
+                variance = sum((s - avg_amplitude) ** 2 for s in segment) / len(segment)
+            else:
+                variance = 0
+            
+            # Kết hợp đặc trưng (trung bình và biến thiên)
+            features = [avg_amplitude, variance]
+            features_list.append(features)
         
-        # Kết hợp đặc trưng
-        features = np.concatenate([mfcc_mean, mfcc_std, chroma_mean, [tempo, spectral_centroid_mean]])
-        features_list.append(features)
-    
-    return features_list
+        return features_list
