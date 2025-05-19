@@ -16,3 +16,9 @@ Hệ thống tìm kiếm bản nhạc bằng âm thanh sử dụng SQL Server v�
    ```bash
    pip install -r requirements.txt
    ```
+
+## Chỉnh sửa trong file main
+
+conn_string = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=server_name;DATABASE=MusicDatabase;Trusted_Connection=yes;"
+
+chỉnh sửa server_name cho đúng trong SQL server management
