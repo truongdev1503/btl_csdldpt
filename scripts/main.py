@@ -1,37 +1,22 @@
+import os
 from store_features import store_segment_features
 from search_music import search_music
-from extract_features import extract_segment_features
-import pyodbc
-import os
 
 def main():
-    dataset_dir = "C:\\Truong\\nam4\\kì 2\\CSDL-DPT\\BTL_Sound\\dataset\\available_data"
+    dataset_dir = "C:\\Truong\\nam4\\kì 2\\CSDL-DPT\\BTL_Sound\\dataset\\train"
     conn_string = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=TRUONGCUTE;DATABASE=MusicDatabase;Trusted_Connection=yes;"
-    segment_duration = 5.0
-    input_file = "C:\\Truong\\nam4\\kì 2\\CSDL-DPT\\BTL_Sound\\dataset\\input_data\\test4.WAV"
+    input_file = "C:\\Truong\\nam4\\kì 2\\CSDL-DPT\\BTL_Sound\\dataset\\test\\test5.wav"
     
-    # Lưu đặc trưng (chạy lần đầu)
+    # Kiểm tra file input có tồn tại không
+    if not os.path.exists(input_file):
+        print(f"Error: Input file {input_file} does not exist. Please check the path or use a different file.")
+        return
+    
     print("Storing features to SQL Server...")
-    store_segment_features(dataset_dir, conn_string, segment_duration)
+    store_segment_features(dataset_dir, conn_string, segment_duration=10.0, hop_size=7.5, n_mfcc=40)
     
-    # Tìm kiếm
     print("Searching for similar songs...")
-    top_matches = search_music(input_file, conn_string, segment_duration)
-    
-    # Trích xuất vector đặc trưng của input file (lấy đoạn đầu để đơn giản)
-    input_features_list = extract_segment_features(input_file, segment_duration)
-    input_features = input_features_list[0] if input_features_list else []
-    
-    # In thông tin bài hát input đầu vào
-    input_filename = os.path.basename(input_file)
-    print(f"\nInput song: {input_filename}")
-    print(f"Feature vector: {input_features}")
-    
-    # In top 3 bài hát giống nhất cùng với vector đặc trưng có độ tương đồng cao nhất
-    print("\nTop 3 file âm thanh giống nhất:")
-    for filename, similarity, segment_index, features in top_matches:
-        print(f"\nFile: {filename}, Độ tương đồng: {similarity:.4f}")
-        print(f"Feature vector (segment {segment_index}): {features}")
+    top_matches = search_music(input_file, conn_string, top_k=3, n_mfcc=40, segment_duration=10.0, hop_size=7.5)
 
 if __name__ == "__main__":
     main()

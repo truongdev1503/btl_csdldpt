@@ -1,47 +1,48 @@
-import wave
-import struct
+import librosa
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
-def extract_segment_features(file_path, segment_duration=5.0):
-    # Mở file WAV
-    with wave.open(file_path, 'rb') as wav_file:
-        # Lấy thông số file
-        n_channels = wav_file.getnchannels()
-        sample_width = wav_file.getsampwidth()
-        frame_rate = wav_file.getframerate()
-        n_frames = wav_file.getnframes()
+def extract_segment_features(file_path, segment_duration=10.0, hop_size=7.5, sr=22050, n_mfcc=40, silence_threshold=-50.0):
+    try:
+        # Load file âm thanh
+        audio, sr = librosa.load(file_path, sr=sr, mono=True)
+        audio_duration = len(audio) / sr
         
-        # Tính số mẫu trong một đoạn
-        segment_samples = int(frame_rate * segment_duration)
-        n_segments = n_frames // segment_samples
+        # Kiểm tra file silent dựa trên mức năng lượng (dB)
+        rms = librosa.feature.rms(y=audio)
+        energy_db = 20 * np.log10(np.mean(rms) + 1e-10)  # Tránh log(0)
+        if energy_db < silence_threshold:  # Ngưỡng -50 dB
+            return [np.zeros((n_mfcc, 1))], audio_duration  # Trả về ma trận MFCC rỗng và thời lượng
         
-        # Đọc toàn bộ dữ liệu thô
-        raw_data = wav_file.readframes(n_frames)
-        # Chuyển đổi dữ liệu thô thành danh sách giá trị (cho định dạng 16-bit)
-        if sample_width == 2:  # 16-bit audio
-            samples = [struct.unpack('<h', raw_data[i:i+2])[0] for i in range(0, len(raw_data), 2)]
-        else:
-            raise ValueError("Chỉ hỗ trợ định dạng 16-bit hiện tại")
+        # Chia thành các segment 10 giây với hop size 7.5 giây
+        segment_length = int(segment_duration * sr)  # Số mẫu trong 10 giây
+        hop_length = int(hop_size * sr)  # Số mẫu trong 7.5 giây
+        segments = []
+        for start in range(0, len(audio) - segment_length + 1, hop_length):
+            end = start + segment_length
+            if end > len(audio):
+                break  # Bỏ đoạn cuối nếu không đủ 10 giây
+            segment = audio[start:end]
+            segments.append(segment)
         
-        # Tính vector đặc trưng thủ công cho từng đoạn
+        if not segments:
+            return [], audio_duration
+        
         features_list = []
-        for i in range(n_segments):
-            start_idx = i * segment_samples
-            end_idx = min((i + 1) * segment_samples, n_frames)
-            segment = samples[start_idx:end_idx]
-            if len(segment) < segment_samples // 2:  # Bỏ qua đoạn quá ngắn
-                continue
-                
-            # Tính trung bình biên độ
-            avg_amplitude = sum(abs(s) for s in segment) / len(segment) if segment else 0
-            
-            # Tính biến thiên biên độ (phương sai đơn giản)
-            if len(segment) > 1:
-                variance = sum((s - avg_amplitude) ** 2 for s in segment) / len(segment)
-            else:
-                variance = 0
-            
-            # Kết hợp đặc trưng (trung bình và biến thiên)
-            features = [avg_amplitude, variance]
-            features_list.append(features)
+        for segment in segments:
+            # Trích xuất MFCC chuỗi
+            mfcc = librosa.feature.mfcc(y=segment, sr=sr, n_mfcc=n_mfcc)
+            # Chuẩn hóa z-score trên từng hệ số MFCC
+            mfcc_mean = np.mean(mfcc, axis=1, keepdims=True)
+            mfcc_std = np.std(mfcc, axis=1, keepdims=True)
+            mfcc_std[mfcc_std == 0] = 1e-10  # Tránh chia cho 0
+            mfcc_zscore = (mfcc - mfcc_mean) / mfcc_std
+            # Chuẩn hóa Min-Max Scaling
+            scaler = MinMaxScaler()
+            mfcc_normalized = scaler.fit_transform(mfcc_zscore)
+            features_list.append(mfcc_normalized)
         
-        return features_list
+        return features_list, audio_duration
+    except Exception as e:
+        print(f"Error processing {file_path}: {e}")
+        return [], 0.0
